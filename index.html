@@ -95,10 +95,24 @@
   </div>
 
   <dialog id="settings">
-    <h3>⚙️ Pengaturan API</h3>
-    <small>Alamat endpoint API analisamu. Format yang diharapkan: POST JSON <code>{ "url": "&lt;link video&gt;" }</code> → respons <code>{ "title": "...", "clips": [ { "start": detik, "end": detik, "score": 0-100, "type": "hook|komedi|emosi", "title": "...", "reason": "...", "download_url": "..." } ] }</code></small>
-    <label for="apiUrl">URL API</label>
-    <input type="url" id="apiUrl" placeholder="https://api-mu.com/analyze">
+    <h3>⚙️ Pengaturan Analisis</h3>
+    <label for="provider">Penyedia</label>
+    <select id="provider" style="width:100%;padding:10px;border:2px solid var(--ink);border-radius:12px;font-size:1rem;background:var(--paper)">
+      <option value="gemini">Google Gemini (gratis, baca link YouTube langsung)</option>
+      <option value="custom">API kustom (endpoint milikmu)</option>
+    </select>
+    <div id="geminiFields">
+      <label for="gemKey" style="margin-top:12px">API Key Gemini</label>
+      <input type="password" id="gemKey" placeholder="AIza... atau AQ...">
+      <label for="gemModel" style="margin-top:12px">Model</label>
+      <input type="text" id="gemModel" placeholder="gemini-flash-latest">
+      <small style="color:#666;display:block;margin-top:8px">Ambil key gratis di <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a></small>
+    </div>
+    <div id="customFields" style="display:none">
+      <label for="apiUrl" style="margin-top:12px">URL API</label>
+      <input type="url" id="apiUrl" placeholder="https://api-mu.com/analyze">
+      <small style="color:#666;display:block;margin-top:8px">Format: POST JSON <code>{ "url": "&lt;link video&gt;" }</code> → respons <code>{ "title": "...", "clips": [...] }</code></small>
+    </div>
     <div class="row" style="margin-top:14px">
       <button class="btn-primary" onclick="saveSettings()">Simpan</button>
       <button class="btn-ghost" onclick="settings.close()">Tutup</button>
@@ -118,13 +132,29 @@ const demoClips={title:"Contoh: Podcast Kreatif #12 — Rahasia Konten Viral",du
  {start:1610,end:1680,score:82,type:"emosi",title:"Cerita menyentuh tentang support system",reason:"Tempo melambat, ada jeda emosional. Cocok untuk Shorts storytime.",download_url:"#"}
 ]};
 function fmt(s){const m=Math.floor(s/60),x=Math.floor(s%60);return m+":"+(x<10?"0":"")+x}
+const PROMPT=`Tonton video ini dan temukan momen-momen terbaik untuk YouTube Shorts (potongan 30-75 detik). Fokus pada: hook pembuka kuat, momen komedi/tawa, momen emosional, twist, atau kutipan quotable. Balas HANYA dengan JSON array (tanpa teks lain) berisi maksimal 5 objek, urut dari skor tertinggi, tiap objek: {"start_sec":angka,"end_sec":angka,"score":0-100,"type":"hook|komedi|emosi","title":"judul singkat menarik dalam Bahasa Indonesia","reason":"alasan singkat dalam Bahasa Indonesia"}. Semua teks dalam Bahasa Indonesia.`;
 function analyze(){
   const url=$('vurl').value.trim();
   if(!url){alert("Tempel link videonya dulu ya! 🙂");return}
+  const prov=localStorage.getItem('cg_provider');
+  const key=localStorage.getItem('cg_gemkey');
   const api=localStorage.getItem('cg_api');
   $('goBtn').disabled=true;
   $('status').style.display='block';
-  $('status').innerHTML='<span class="spinner"></span>Mengunduh & menganalisis video… ini bisa memakan waktu sejenak.';
+  $('status').innerHTML='<span class="spinner"></span>Menganalisis video dengan AI… (bisa 1-2 menit untuk video panjang)';
+  if(prov==='gemini'&&key){
+    const model=localStorage.getItem('cg_model')||'gemini-flash-latest';
+    const body={contents:[{parts:[{file_data:{file_uri:url}},{text:PROMPT}]}],generationConfig:{temperature:0.4,responseMimeType:"application/json"}};
+    fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+encodeURIComponent(key),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+     .then(r=>r.json().then(d=>{if(!r.ok)throw new Error((d.error&&d.error.message)||('HTTP '+r.status));return d}))
+     .then(d=>{
+        const txt=(d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts||[]).map(p=>p.text||'').join('')||'[]';
+        const arr=JSON.parse(txt);
+        render({title:'Analisis Gemini ('+model+')',clips:arr.map(c=>({start:c.start_sec,end:c.end_sec,score:c.score,type:c.type,title:c.title,reason:c.reason,download_url:'#'}))});
+     })
+     .catch(e=>{$('status').innerHTML='⚠️ Gagal memanggil Gemini: '+e.message+'<br>Fallback ke mode demo…';setTimeout(()=>render(demoClips),1500)});
+    return;
+  }
   if(!api){
     setTimeout(()=>render(demoClips),1800);return;
   }
@@ -152,12 +182,31 @@ function render(d){
   $('results').scrollIntoView({behavior:'smooth'});
 }
 function saveSettings(){
+  const prov=$('provider').value;
+  localStorage.setItem('cg_provider',prov);
+  const k=$('gemKey').value.trim();
+  if(k){localStorage.setItem('cg_gemkey',k)}else{localStorage.removeItem('cg_gemkey')}
+  const m=$('gemModel').value.trim();
+  if(m){localStorage.setItem('cg_model',m)}else{localStorage.removeItem('cg_model')}
   const v=$('apiUrl').value.trim();
   if(v){localStorage.setItem('cg_api',v)}else{localStorage.removeItem('cg_api')}
   settings.close();
-  $('demoNote').style.display=v?'none':'block';
+  const active=(prov==='gemini'&&k)||(prov==='custom'&&v);
+  $('demoNote').style.display=active?'none':'block';
 }
-if(localStorage.getItem('cg_api')){$('demoNote').style.display='none';$('apiUrl').value=localStorage.getItem('cg_api')}
+$('provider').addEventListener('change',()=>{
+  $('geminiFields').style.display=$('provider').value==='gemini'?'block':'none';
+  $('customFields').style.display=$('provider').value==='custom'?'block':'none';
+});
+(function(){
+  const prov=localStorage.getItem('cg_provider');
+  if(prov){$('provider').value=prov;$('provider').dispatchEvent(new Event('change'))}
+  const k=localStorage.getItem('cg_gemkey');if(k){$('gemKey').value=k;$('gemModel').value=localStorage.getItem('cg_model')||''}
+  const v=localStorage.getItem('cg_api');
+  const active=(prov==='gemini'&&k)||(prov==='custom'&&v);
+  if(v){$('apiUrl').value=v}
+  if(active){$('demoNote').style.display='none'}
+})()
 </script>
 </body>
 </html>
