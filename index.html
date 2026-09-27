@@ -164,6 +164,7 @@ function analyze(){
    .catch(e=>{$('status').innerHTML='⚠️ Gagal memanggil API: '+e.message+'<br>Fallback ke mode demo…';setTimeout(()=>render(demoClips),1200)});
 }
 function render(d){
+  lastData=d;
   $('goBtn').disabled=false;
   $('status').style.display='none';
   $('results').style.display='block';
@@ -177,9 +178,27 @@ function render(d){
         ⏱ ${fmt(c.start)} – ${fmt(c.end)} (${Math.round(c.end-c.start)} detik)
         <span class="tag t-${c.type}">${(c.type||'').toUpperCase()}</span><br>
         <span style="color:#555;font-size:.9rem">${c.reason||''}</span></div>
-      <a href="${c.download_url||'#'}" download><button>⬇️ Download</button></a>
-    </div>`}).join('')||'<p>Tidak ada klip terdeteksi.</p>';
+      <button onclick="copyJson()" style="background:var(--green)">📋 Salin JSON</button>
+      <button onclick="openYouTube(${c.start},${c.end})" title="Buka di YouTube pada waktu klip">▶️ Lihat</button>
+    </div>`}).join('')||'<p>Tidak ada klip terdeteksi.</p>'
+    + `<p style="margin-top:14px;font-size:.9rem;color:#555">💡 Klik <b>Salin JSON</b> untuk menyalin semua klip, simpan sebagai <code>clips.json</code>, lalu jalankan <b>ClipGenius Cutter</b> di komputermu untuk mendapatkan file video MP4.</p>`;
   $('results').scrollIntoView({behavior:'smooth'});
+}
+let lastData=null;
+function openYouTube(s,e){
+  const u=$('vurl').value.trim()||'';
+  const m=u.match(/[?&]v=([\w-]{11})/)||u.match(/youtu\.be\/([\w-]{11})/);
+  if(!m){alert('Link YouTube tidak terbaca');return}
+  window.open('https://www.youtube.com/watch?v='+m[1]+'&t='+Math.floor(s)+'s','_blank');
+}
+function copyJson(){
+  if(!lastData){alert('Belum ada hasil analisis');return}
+  const url=$('vurl').value.trim();
+  const data=JSON.stringify({url:url,...lastData},null,2);
+  navigator.clipboard.writeText(data).then(()=>alert('JSON tersalin! Simpan sebagai clips.json dan jalankan ClipGenius Cutter.')).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=data;document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');ta.remove();alert('JSON tersalin!');
+  });
 }
 function saveSettings(){
   const prov=$('provider').value;
