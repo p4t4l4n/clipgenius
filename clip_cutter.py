@@ -101,6 +101,12 @@ def get_video(url, tmp="source_video"):
     if r.returncode != 0:
         err("Gagal mengunduh video:")
         print((r.stderr or r.stdout)[-1500:])
+        print()
+        warn("Jika muncul 'Sign in to confirm you're not a bot':")
+        print("  1. Ekspor cookies YouTube dari browser (ekstensi 'Get cookies.txt')")
+        print("     simpan sebagai cookies.txt di folder ini. Lalu edit baris yt-dlp:")
+        print('     tambahkan  "--cookies", "cookies.txt",  ke dalam variabel cmd')
+        print("  2. atau unduh video manual lalu pakai:  python clip_cutter.py --file video.mp4")
         sys.exit(1)
     found = [f for f in os.listdir(".") if f.startswith(tmp + ".")]
     if not found:
@@ -194,13 +200,37 @@ def main():
             err("Tidak ada klip yang dimasukkan."); sys.exit(1)
     else:
         url, clips = data
-        if not url:
-            url = input("Link YouTube : ").strip()
+        _local = None
+        if isinstance(json.load(open(arg_file, encoding="utf-8")) if os.path.exists(arg_file) else {}, dict):
+            pass
+        try:
+            with open(arg_file, "r", encoding="utf-8") as _f:
+                _d = json.load(_f)
+            if isinstance(_d, dict): _local = _d.get("file")
+        except Exception: pass
+        if not url and not _local:
+            url = input("Link YouTube      : ").strip()
         if not clips:
             err("Tidak ada klip di file JSON."); sys.exit(1)
         ok(f"Memuat {len(clips)} klip dari {arg_file}\n")
 
-    src = get_video(url)
+    # dukung file lokal (skip download)
+    local_file = None
+    if len(sys.argv) > 2 and sys.argv[1] == "--file":
+        local_file = sys.argv[2]
+    elif os.path.exists("clips.json"):
+        try:
+            with open("clips.json", "r", encoding="utf-8") as f:
+                _d = json.load(f)
+            if isinstance(_d, dict) and _d.get("file"): local_file = _d["file"]
+        except Exception: pass
+    if local_file:
+        src = local_file
+        if not os.path.exists(src):
+            err(f"File lokal tidak ditemukan: {src}"); sys.exit(1)
+        ok("Memakai file lokal: " + src)
+    else:
+        src = get_video(url)
     print()
     info(f"Memotong {len(clips)} klip (mode {'VERTIKAL 9:16' if VERTICAL else 'ORIGINAL'})...\n")
 
@@ -221,7 +251,10 @@ def main():
         except Exception: pass
     else:
         err("Tidak ada klip yang berhasil dibuat.")
-    keep = input("\nHapus video sumber yang besar? (y/n) [n]: ").strip().lower()
+    try:
+        keep = input("\nHapus video sumber yang besar? (y/n) [n]: ").strip().lower()
+    except EOFError:
+        keep = "n"
     if keep == "y":
         try:
             os.remove(src); ok("Video sumber dihapus.")
